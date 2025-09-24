@@ -11,6 +11,7 @@ from .models import (
     ReferenceDocument,
 )
 from .rag import TfidfRetriever, load_reference_corpus
+from .metadata import MetadataExtractor
 
 __all__ = [
     "AdvisorReference",
@@ -20,6 +21,7 @@ __all__ = [
     "KnowledgeArticle",
     "KnowledgeBase",
     "LLMEmailComposer",
+    "MetadataExtractor",
     "RankedMatch",
     "ReferenceCorpus",
     "ReferenceDocument",

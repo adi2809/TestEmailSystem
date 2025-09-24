@@ -100,3 +100,31 @@ def test_llm_composer_generates_email(llm_advisor: EmailAdvisor) -> None:
     assert "References:" in response.body
     assert response.references
     assert "[1]" in response.body
+
+
+def test_synonym_expansion_improves_withdrawal_match(advisor: EmailAdvisor) -> None:
+    matches = advisor.rank_articles("I need to remove a course from my schedule.")
+    assert matches
+    assert matches[0].article_id == "course_withdrawal"
+
+
+def test_metadata_extraction_autofills_placeholders(advisor: EmailAdvisor) -> None:
+    response = advisor.process_query(
+        "Hi, my name is Taylor. I need to remove a course for Fall 2024 before October 21.",
+        {},
+    )
+    assert response.article_id == "course_withdrawal"
+    assert "Taylor" in response.body
+    assert "Fall 2024" in response.body
+    assert "October 21" in response.body
+    assert any("Taylor" in reason for reason in response.reasons)
+
+
+def test_ambiguous_queries_require_review(advisor: EmailAdvisor) -> None:
+    response = advisor.process_query(
+        "Can you help me register for classes and request an official transcript?",
+        {"student_name": "Jamie"},
+    )
+    assert response.auto_send is False
+    assert response.article_id is None
+    assert any("Multiple templates" in reason for reason in response.reasons)

@@ -55,12 +55,15 @@ class ConfidenceSettings:
 
     auto_send_threshold: float = 0.95
     review_threshold: float = 0.55
+    ambiguity_gap: float = 0.08
 
     def __post_init__(self) -> None:  # type: ignore[override]
         if not (0.0 <= self.review_threshold <= 1.0):
             raise ValueError("review_threshold must be between 0 and 1")
         if not (0.0 <= self.auto_send_threshold <= 1.0):
             raise ValueError("auto_send_threshold must be between 0 and 1")
+        if not (0.0 <= self.ambiguity_gap <= 1.0):
+            raise ValueError("ambiguity_gap must be between 0 and 1")
         if self.auto_send_threshold < self.review_threshold:
             raise ValueError(
                 "auto_send_threshold must be greater than or equal to review_threshold"

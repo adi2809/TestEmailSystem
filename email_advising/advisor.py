@@ -13,7 +13,8 @@ from .models import (
     RankedMatch,
 )
 from .similarity import TfIdfVectorizer
-from .text_processing import tokenize
+from .metadata import MetadataExtractor
+from .text_processing import augment_tokens, tokenize
 
 
 class _TemplateContext(dict):
@@ -63,6 +64,7 @@ class EmailAdvisor:
         retriever: Optional[ReferenceRetriever] = None,
         composer: Optional[EmailComposer] = None,
         reference_limit: int = 3,
+        metadata_extractor: Optional[MetadataExtractor] = None,
     ) -> None:
         self.knowledge_base = knowledge_base
         self.confidence_settings = confidence_settings or ConfidenceSettings()
@@ -79,9 +81,13 @@ class EmailAdvisor:
         self.retriever = retriever
         self.reference_limit = max(reference_limit, 0)
         self.email_composer = composer or TemplateEmailComposer()
+        self.metadata_extractor = metadata_extractor or MetadataExtractor()
+        self._known_metadata_keys: set[str] = set(self.metadata_defaults.keys())
         documents = []
         self._article_token_sets: List[set[str]] = []
+        self._category_token_sets: List[set[str]] = []
         self._utterance_token_sets: List[List[List[str]]] = []
+        self._domain_vocabulary: set[str] = set()
         for article in self.knowledge_base:
             tokens = tokenize(
                 " ".join(
@@ -90,14 +96,22 @@ class EmailAdvisor:
                     + [article.subject]
                 )
             )
-            documents.append(tokens)
-            self._article_token_sets.append(set(tokens))
+            augmented_tokens = augment_tokens(tokens)
+            documents.append(augmented_tokens)
+            self._article_token_sets.append(set(augmented_tokens))
+            self._domain_vocabulary.update(augmented_tokens)
             self._utterance_token_sets.append([tokenize(utterance) for utterance in article.utterances])
+            category_tokens = augment_tokens(tokenize(" ".join(article.categories)))
+            self._category_token_sets.append(set(category_tokens))
+            self._known_metadata_keys.update(article.metadata.keys())
         self.vectorizer = TfIdfVectorizer(documents)
 
     def rank_articles(self, query: str) -> List[RankedMatch]:
-        query_tokens = tokenize(query)
+        raw_query_tokens = tokenize(query)
+        query_tokens = augment_tokens(raw_query_tokens)
         token_set = set(query_tokens)
+        raw_token_set = set(raw_query_tokens)
+        domain_token_set = {token for token in query_tokens if token in self._domain_vocabulary}
         scores = self.vectorizer.similarities(query_tokens)
         ranked: List[RankedMatch] = []
         for idx, (article, score) in enumerate(zip(self.knowledge_base.articles, scores)):
@@ -105,10 +119,38 @@ class EmailAdvisor:
             if token_set:
                 overlap = len(token_set & self._article_token_sets[idx]) / len(token_set)
             utterance_tokens = self._utterance_token_sets[idx]
-            exact_match = any(ut == query_tokens for ut in utterance_tokens if ut)
-            blended_score = 0.8 * score + 0.2 * overlap
+            exact_match = any(ut == raw_query_tokens for ut in utterance_tokens if ut)
+            category_tokens = self._category_token_sets[idx]
+            category_overlap = 0.0
+            if category_tokens and token_set:
+                category_overlap = len(token_set & category_tokens) / len(category_tokens)
+            domain_overlap = 0.0
+            if domain_token_set:
+                domain_overlap = len(domain_token_set & self._article_token_sets[idx]) / len(domain_token_set)
+            utterance_similarity = 0.0
+            if raw_token_set:
+                for utterance in utterance_tokens:
+                    if not utterance:
+                        continue
+                    utterance_set = set(utterance)
+                    intersection = len(raw_token_set & utterance_set)
+                    denominator = max(len(raw_token_set), len(utterance_set))
+                    if denominator:
+                        utterance_similarity = max(utterance_similarity, intersection / denominator)
+            blended_score = (
+                0.35 * score
+                + 0.2 * overlap
+                + 0.25 * domain_overlap
+                + 0.15 * category_overlap
+                + 0.05 * utterance_similarity
+            )
+            category_matches = len(category_tokens & domain_token_set)
+            if category_matches:
+                blended_score += min(0.2, 0.08 * category_matches)
             if exact_match:
                 blended_score = max(blended_score, 1.0)
+            if blended_score > 1.0:
+                blended_score = 1.0
             ranked.append(
                 RankedMatch(article_id=article.id, subject=article.subject, confidence=blended_score)
             )
@@ -116,23 +158,46 @@ class EmailAdvisor:
         return ranked
 
     def process_query(self, query: str, metadata: Optional[Dict[str, str]] = None) -> AdvisorResponse:
-        metadata = metadata or {}
+        metadata = dict(metadata or {})
+        metadata_notes: List[str] = []
+        if self.metadata_extractor:
+            for fact in self.metadata_extractor.extract(query):
+                if fact.key not in self._known_metadata_keys:
+                    continue
+                if metadata.get(fact.key):
+                    continue
+                metadata[fact.key] = fact.value
+                metadata_notes.append(fact.reason)
         matches = self.rank_articles(query)
         reasons: List[str] = []
         if not matches:
+            reasons.extend(metadata_notes)
             return self._fallback_response(query, metadata, reasons)
         best_match = matches[0]
         reasons.append(
             f"Top match '{best_match.subject}' scored {best_match.confidence:.2f}."
         )
+        if (
+            len(matches) > 1
+            and matches[1].confidence >= self.confidence_settings.review_threshold
+        ):
+            gap = best_match.confidence - matches[1].confidence
+            if gap < self.confidence_settings.ambiguity_gap:
+                reasons.append(
+                    "Multiple templates scored similarly high; routing to advisors for review."
+                )
+                reasons.extend(metadata_notes)
+                return self._fallback_response(query, metadata, reasons, matches)
         if best_match.confidence < self.confidence_settings.review_threshold:
             reasons.append(
                 "No article exceeded the review confidence threshold; escalating to advising team."
             )
+            reasons.extend(metadata_notes)
             return self._fallback_response(query, metadata, reasons, matches)
         article = self.knowledge_base.get(best_match.article_id)
         if article is None:
             reasons.append("Matched article could not be found in the knowledge base.")
+            reasons.extend(metadata_notes)
             return self._fallback_response(query, metadata, reasons, matches)
         response, context = self._render_article(article, metadata)
         references = self._get_references(query, article, reasons)
@@ -164,6 +229,7 @@ class EmailAdvisor:
             reasons.append(
                 f"Default values used for: {defaults_used}. Update metadata if more specific details are available."
             )
+        reasons.extend(metadata_notes)
         return AdvisorResponse(
             subject=subject,
             body=body,

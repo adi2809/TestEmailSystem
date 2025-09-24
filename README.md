@@ -5,11 +5,14 @@ This repository contains a lightweight "Email Advising System" that helps an aca
 ## Key features
 
 - **Knowledge base driven responses** – Advising templates and follow-up prompts are stored in `data/knowledge_base.json`, making it easy to update content without touching the code.
+- **Smarter query understanding** – Domain-specific synonyms, token augmentation, and utterance similarity create robust matches even when students use unfamiliar phrasing.
 - **Confidence-aware automation** – Responses are auto-sent only when similarity exceeds the 0.95 threshold and all template fields are satisfied. Otherwise, the system supplies a draft and clear reasons for human review.
+- **Ambiguity detection** – When multiple templates score similarly, the advisor flags the message for human review rather than guessing.
 - **Explainable ranking** – The top matches (with confidence scores) are returned with every decision so advisors can understand why a template was chosen.
 - **Command line interface** – Generate responses locally from the terminal or integrate with other systems via JSON output.
 - **Extensible Python package** – Core components are organized as a reusable module (`email_advising`) with clean data models and utilities.
-- **Retrieval-augmented references** – The advisor surfaces supporting documents from `data/reference_corpus.json` (or a custom corpus) and adds citation-style references with URLs to every response.
+- **Automatic metadata enrichment** – The advisor can infer student names, terms, and deadline dates from the incoming message to fill in template placeholders.
+- **Retrieval-augmented references** – The advisor surfaces supporting documents from `data/reference_corpus.json` (or a custom corpus) and adds citation-style references with URLs to every response using diversity-aware re-ranking.
 - **LLM-ready composition** – Swap the default template composer for the `LLMEmailComposer` to let a large language model polish the draft while still grounding the answer in retrieved references.
 
 ## Getting started
@@ -57,6 +60,12 @@ This repository contains a lightweight "Email Advising System" that helps an aca
 - Provide a different corpus to the CLI via `--reference-corpus path/to/custom.json` or load it programmatically with `load_reference_corpus` and `TfidfRetriever`.
 - References are returned on every response via `AdvisorResponse.references` and appended to the email body using `[n]` citation markers.
 
+## Automatic metadata enrichment
+
+- Incoming questions are scanned for names (e.g., “My name is Taylor”), academic terms (“Fall 2024”), and contextual date mentions (“before October 21”) to pre-fill template placeholders.
+- Extracted metadata is added only when the caller did not explicitly provide a value so human-provided data always wins.
+- Each inferred value is logged in the response `reasons` field for auditability.
+
 ## Composing emails with LLMs
 
 The default `TemplateEmailComposer` uses the knowledge base verbatim. For more natural phrasing, pair the advisor with an LLM that returns JSON containing `subject` and `body` keys:
@@ -102,6 +111,7 @@ pytest
 ```
 
 Tests cover article ranking, the 95% auto-send threshold, manual-review handling, and the inclusion of follow-up prompts.
+Additional tests verify the synonym-powered ranking, metadata enrichment, and ambiguous query handling.
 
 ## Repository structure
 

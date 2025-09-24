@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import List
+from typing import Iterable, List, Sequence
 
 
 _STOPWORDS = {
@@ -43,6 +43,29 @@ _STOPWORDS = {
     "your",
 }
 
+_TOKEN_SYNONYMS = {
+    "appointment": {"meeting", "advising", "schedule"},
+    "appointments": {"meeting", "schedule"},
+    "book": {"schedule", "appointment"},
+    "cancel": {"withdraw", "drop"},
+    "course": {"class"},
+    "courses": {"classes"},
+    "drop": {"withdraw", "withdrawal", "remove"},
+    "dropping": {"withdraw", "withdrawal"},
+    "enroll": {"register", "registration"},
+    "enrolling": {"register", "registration"},
+    "enrollment": {"register", "registration"},
+    "financial": {"aid"},
+    "meeting": {"appointment"},
+    "register": {"enroll", "registration"},
+    "registration": {"register", "enroll"},
+    "remove": {"withdraw", "drop"},
+    "schedule": {"appointment", "meeting"},
+    "transcript": {"record", "records"},
+    "withdraw": {"drop", "withdrawal"},
+    "withdrawal": {"withdraw", "drop"},
+}
+
 _WORD_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -68,4 +91,32 @@ def tokenize(text: str) -> List[str]:
     return [token for token in normalized.split(" ") if token and token not in _STOPWORDS]
 
 
-__all__ = ["normalize_text", "tokenize"]
+def augment_tokens(tokens: Sequence[str]) -> List[str]:
+    """Augment *tokens* with domain-specific synonyms and bi-grams."""
+
+    unique_tokens: List[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        if token not in seen:
+            seen.add(token)
+            unique_tokens.append(token)
+    for token in tokens:
+        synonyms = _TOKEN_SYNONYMS.get(token, ())
+        for synonym in synonyms:
+            if synonym not in seen:
+                seen.add(synonym)
+                unique_tokens.append(synonym)
+    for left, right in _iterate_bigrams(tokens):
+        bigram = f"{left}_{right}"
+        if bigram not in seen:
+            seen.add(bigram)
+            unique_tokens.append(bigram)
+    return unique_tokens
+
+
+def _iterate_bigrams(tokens: Sequence[str]) -> Iterable[tuple[str, str]]:
+    for index in range(len(tokens) - 1):
+        yield tokens[index], tokens[index + 1]
+
+
+__all__ = ["augment_tokens", "normalize_text", "tokenize"]
