@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Email Advising UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="page__header">
+        <h1>Email Advising Assistant</h1>
+        <p>
+          Paste a student question, add any known details, and review the suggested
+          reply. The assistant will highlight confidence, recommended actions, and
+          any follow-up prompts for advisors.
+        </p>
+      </header>
+
+      <section class="card">
+        <form method="post" class="form">
+          <div class="form__group">
+            <label for="query">Student email or question</label>
+            <textarea
+              id="query"
+              name="query"
+              rows="8"
+              required
+              placeholder="Hello advisor, I need help withdrawing from BIO 210..."
+            >{{ query }}</textarea>
+          </div>
+
+          <fieldset class="form__group form__group--metadata">
+            <legend>Optional metadata</legend>
+            <div class="metadata-grid">
+              {% for field in metadata_fields %}
+              <label class="metadata-grid__item" for="{{ field.key }}">
+                <span class="metadata-grid__label">{{ field.label }}</span>
+                <input
+                  id="{{ field.key }}"
+                  name="{{ field.key }}"
+                  type="text"
+                  placeholder="{{ field.placeholder }}"
+                  value="{{ metadata.get(field.key, '') }}"
+                />
+              </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+
+          <div class="form__actions">
+            <button type="submit">Generate response</button>
+          </div>
+        </form>
+      </section>
+
+      {% if error %}
+      <section class="card card--error">
+        <h2>Something went wrong</h2>
+        <p>{{ error }}</p>
+      </section>
+      {% endif %}
+
+      {% if result %}
+      <section class="card card--result">
+        <div class="decision-banner decision-banner--{{ 'auto' if result.auto_send else 'review' }}">
+          <div class="decision-banner__status">
+            {% if result.auto_send %}
+            <strong>Ready to auto-send</strong>
+            {% else %}
+            <strong>Advisor review recommended</strong>
+            {% endif %}
+          </div>
+          <div class="decision-banner__confidence">
+            Confidence: {{ '%.0f'|format(result.confidence * 100) }}%
+          </div>
+        </div>
+
+        <div class="result__content">
+          <h2>Suggested subject</h2>
+          <p class="result__subject">{{ result.subject }}</p>
+
+          <h2>Suggested body</h2>
+          <pre class="result__body">{{ result.body }}</pre>
+        </div>
+
+        {% if result.reasons %}
+        <div class="result__section">
+          <h3>Advisor notes</h3>
+          <ul>
+            {% for reason in result.reasons %}
+            <li>{{ reason }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if result.follow_up_questions %}
+        <div class="result__section">
+          <h3>Follow-up questions</h3>
+          <ul>
+            {% for prompt in result.follow_up_questions %}
+            <li>{{ prompt }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if result.references %}
+        <div class="result__section">
+          <h3>Supporting references</h3>
+          <ul class="reference-list">
+            {% for reference in result.references %}
+            <li>
+              <strong>{{ reference.title }}</strong>
+              {% if reference.url %}
+              – <a href="{{ reference.url }}" target="_blank" rel="noopener">View source</a>
+              {% endif %}
+              <p>{{ reference.snippet }}</p>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if result.ranked_matches %}
+        <div class="result__section">
+          <h3>Top matches</h3>
+          <table class="match-table">
+            <thead>
+              <tr>
+                <th scope="col">Subject</th>
+                <th scope="col">Confidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for match in result.ranked_matches[:5] %}
+              <tr {% if loop.first %}class="is-best"{% endif %}>
+                <td>{{ match.subject }}</td>
+                <td>{{ '%.0f'|format(match.confidence * 100) }}%</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </section>
+      {% endif %}
+    </main>
+  </body>
+</html>

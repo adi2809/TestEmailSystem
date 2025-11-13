@@ -41,7 +41,18 @@ This repository contains a lightweight "Email Advising System" that helps an aca
        --format json
    ```
 
-4. **Customize defaults:** Provide additional metadata (e.g., `--registration-deadline`, `--financial-aid-email`) to enrich the templates and increase the likelihood of auto-sending responses. Use `--max-references 5` to control how many citations to include, `--reference-corpus` to load a different JSON corpus, or `--disable-references` to skip retrieval entirely.
+4. **Launch the web UI:**
+
+   Install the optional Flask dependency and start the local server:
+
+   ```bash
+   pip install flask
+   python -m email_advising.webapp
+   ```
+
+   Open <http://127.0.0.1:5000> to paste student questions, supply optional metadata, and review the generated response with confidence notes, follow-up prompts, and supporting references.
+
+5. **Customize defaults:** Provide additional metadata (e.g., `--registration-deadline`, `--financial-aid-email`) to enrich the templates and increase the likelihood of auto-sending responses. Use `--max-references 5` to control how many citations to include, `--reference-corpus` to load a different JSON corpus, or `--disable-references` to skip retrieval entirely.
 
 ## Extending the knowledge base
 
