@@ -1,4 +1,5 @@
 "use client"
+import AdvisorTester from "@/components/advisor-tester";
 import { useState } from "react"
 import SidebarNav from "@/components/sidebar-nav"
 import HeaderTop from "@/components/header-top"
